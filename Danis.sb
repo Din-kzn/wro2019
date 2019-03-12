@@ -1,0 +1,477 @@
+'правое колесо- порт "c"
+'левое колесо- порт "b"
+'манипулятор- порт "a"
+'шторка- порт "d"
+'перекресток- порт "3"
+'кубик- порт "2"
+'правая линия- порт "4"
+'левая линия- порт "1"
+
+'============== Инициализация переменных ==================
+Motor.Invert("b")
+Sensor.SetMode(3,2)
+Sensor.SetMode(2,4)
+Sensor.SetMode(4,0)
+Sensor.SetMode(1,0)
+kSquare=0.33 ' коэфициент пересчета серого
+l=30 ' текущее значение левого датчика линии
+lWhite=0 ' значение левого датчика линии при нахождении на белом
+lBlack=100 ' значение левого датчика линии при нахождении на черном
+lGray=100 ' значение левого серого
+r=30 ' текущее значение правого датчика линии
+rWhite=0 ' значение правого датчика линии при нахождении на белом
+rBlack=100 ' значение правого датчика линии при нахождении на черном
+rGray=100 ' значение правого серого
+m1=0 ' скорость вращения левого колеса
+m2=0 ' скорость вращения правого колеса
+error=0 ' разница между занчениями l и r
+k=0.16 ' коэффициент пропорциональног регулятора
+speed_motor=20 ' базовая скорост вращения колес
+speed_motor_shtorka=60 ' скорость движения шторки
+line=10 ' показания датчика перекрестков
+time=1000
+Red=0   '|
+Green=0 '| RGB значения датчика определения кубика
+Blue=0  '|
+summa_RGB=0 
+H=0 '|
+S=0 '| HSV значения датчика определения кубика
+V=0 '|
+max=0
+min=255
+k_old=0'старое значение K
+BlackGreen=0
+GreenInCell=0 ' кол-во собранных зеленых кубиков
+YellowInCell=0  'кол-во собранных красных кубиков
+Intersection=0 'кол-во пройденных перекрестков
+prevLine=1 ' вспомогательная переменная для подсчета пройденнх перекрестков
+iCount=0 ' сколько перекоестков необходимо пройти
+
+'================= обработка всех датчиков ==================
+Sub ReadSensors
+  While "true"
+    line=Sensor.ReadRawValue(3,0)
+    l=Sensor.ReadPercent(1)
+    r=sensor.ReadPercent(4)
+    color=Sensor.ReadRaw(2,3)
+    Red=color[0]
+    Green=color[1]
+    Blue=color[2]
+    summa_RGB=color[0]+color[1]+color[2]
+  EndWhile
+EndSub
+
+'============== Функция нахождения lGray ===============
+Sub lGrayFind
+  While Intersection=0
+    if l<lBlack  Then 
+      lBlack=l
+    EndIf 
+    if l>lWhite  Then 
+      lWhite=l
+    EndIf 
+  EndWhile 
+  lGray=lWhite*(1-kSquare)+lBlack*kSquare
+EndSub 
+
+'============== Функция нахождения rGray ===============
+Sub rGrayFind
+  While Intersection=0
+    if r<rBlack  Then 
+      rBlack=r
+    EndIf 
+    if r>rWhite  Then 
+      rWhite=r
+    EndIf 
+  EndWhile 
+  rGray=rWhite*(1-kSquare)+rBlack*kSquare
+EndSub 
+
+'============== Функция подсчета перекрестков ===============
+Sub  IntersectionCount
+  While "True"
+    If line=1 Then 
+      If prevLine=1 Then 
+        Intersection =Intersection +1
+        prevLine =0
+      EndIf 
+    Else
+      If prevLine = 0 Then 
+        prevLine =1
+      EndIf
+    EndIf  
+  EndWhile 
+EndSub 
+
+'============== Функция определения HSV ====================
+Sub HSV
+  max=0
+  min=255
+  For i=1 To 3
+    If color[i]>max Then
+      max=color[i]
+    EndIf
+    If color[i]<min Then
+      min=color[i]
+    EndIf
+  EndFor
+  If max=min Then
+    H=0
+  Else
+    If max=Red Then
+      If Green>=Blue Then
+        H=60*(Green-Blue)/(max-min)
+      Else
+        H=60*(Green-Blue)/(max-min)+360
+      EndIf
+    Else
+      If max=Green Then
+        H=60*(Blue-Red)/(max-min)+120
+      Else
+        H=60*(Red-Green)/(max-min)+240
+      EndIf
+    EndIf
+  EndIf  
+  If max=0 Then
+    S=0
+  Else
+    S=1-min/max
+  EndIf
+  V=max
+EndSub
+
+' ================= движение по линии по двум татчикам ==============
+Sub move_line_2
+  While iCount>Intersection 
+    error=(r-l)*k
+    m1=speed_motor-error
+    m2=speed_motor+error
+    Motor.StartSync("bc",m1,m2)
+  EndWhile
+EndSub
+
+' ================= движение до кубика по двум датчикам ================
+Sub move_line_to_cub_2
+  While summa_RGB<20 And iCount  > Intersection 
+    error=(r-l)*k
+    m1=speed_motor-error
+    m2=speed_motor+error
+    Motor.StartSync("bc",m1,m2)
+  EndWhile
+EndSub
+
+' ================= движение до стенки ================
+Sub move_line_to_cub_3
+  While summa_RGB<20
+    Motor.StartSync("bc",speed_motor,speed_motor)
+  EndWhile
+EndSub
+
+' ================= движение до кубика по левому датчику =================
+Sub move_line_to_cub_left
+  While summa_RGB<20 And iCount  > Intersection 
+    error=(lGray-l)*k
+    m1=speed_motor-error
+    m2=speed_motor+error
+    Motor.StartSync("bc",m1,m2)
+  EndWhile
+EndSub
+
+' ================= движение до кубика по правому датчику =================
+Sub move_line_to_cub_rigth
+  While summa_RGB<20 And iCount  > Intersection 
+    error=(r-rGray)*k
+    m1=speed_motor-error
+    m2=speed_motor+error
+    Motor.StartSync("bc",m1,m2)
+  EndWhile
+EndSub
+
+'================= захват кубика в правый  накопитель ================
+Sub right_cell
+  Motor.MoveSync("bc",speed_motor,speed_motor,25,"True")
+  Motor.Move("d",speed_motor_shtorka,100,"False")
+  Motor.Start("d",speed_motor_shtorka)
+  While Motor.GetSpeed("d")>10
+    
+  EndWhile 
+  Motor.Stop ("d","True")
+  Motor.MoveSync("bc",speed_motor,speed_motor,75,"True")
+  Motor.Move("d",-(speed_motor_shtorka),545,"True")
+EndSub  
+
+'================= захват кубика в левый  накопитель ================
+Sub left_cell
+  Motor.MoveSync("bc",speed_motor,speed_motor,25,"True")
+  Motor.Move("d",-(speed_motor_shtorka),100,"False")
+  Motor.Start("d",-(speed_motor_shtorka))
+  While Motor.GetSpeed("d")<-10
+    
+  EndWhile 
+  Motor.Stop ("d","True")
+  Motor.MoveSync("bc",speed_motor,speed_motor,75,"True")
+  Motor.Move("d",speed_motor_shtorka,545,"True")
+EndSub 
+
+'================= открытие левого накопителя =======================
+Sub left_open
+  Motor.Move("d",-(speed_motor_shtorka),100,"False")
+  Motor.Start("d",-(speed_motor_shtorka))
+  While Motor.GetSpeed("d")<-10
+    
+  EndWhile 
+  Motor.Stop ("d","True")
+EndSub 
+
+'================= закрытие левого накопителя ========================
+Sub left_close
+  Motor.Move("d",speed_motor_shtorka,545,"True")
+EndSub 
+
+'================= выгрузка кубика из правого накопителя ================
+Sub right_drop
+  
+  Motor.MoveSync("bc",-(speed_motor),-(speed_motor),130,"True")
+  Motor.Move("d",speed_motor_shtorka,50,"False")
+  Motor.Start("d",speed_motor_shtorka)
+  While Motor.GetSpeed("d")>10
+    
+  EndWhile 
+  Motor.Stop ("d","True")
+  Motor.MoveSync("bc",-(speed_motor),-(speed_motor),80,"True")
+  Motor.Move("d",-(speed_motor_shtorka),545,"True")
+EndSub 
+
+'================= выгрузка кубика из левого накопителя ================
+Sub left_drop
+  Motor.MoveSync("bc",-(speed_motor),-(speed_motor),130,"True")
+  Motor.Move("d",-(speed_motor_shtorka),50,"False")
+  Motor.Start("d",-(speed_motor_shtorka))
+  While Motor.GetSpeed("d")<-10
+    
+  EndWhile 
+  Motor.Stop ("d","True")
+  Motor.MoveSync("bc",-(speed_motor),-(speed_motor),80,"True")
+  Motor.Move("d",speed_motor_shtorka,545,"True")
+EndSub 
+
+'======================== опускание кубика ============================
+Sub drop_cub
+  Motor.Start("A", 20)
+  Program.Delay(100)
+  While Motor.GetSpeed("A")>10
+  EndWhile
+  Motor.Stop("A","False")
+EndSub
+
+'=========================== взятие кубика =======================
+Sub take_cub
+  Motor.MoveSync("bc",speed_motor/2,speed_motor/2,55,"True")
+  Motor.MoveSync("bc",-(speed_motor/2),-(speed_motor/2),90,"True")
+  Motor.Stop("BC","True")
+  Motor.Start("A", -20)
+  Program.Delay(100)
+  While Motor.GetSpeed("A")<-5
+  EndWhile
+  Motor.Stop("A","True")
+EndSub
+
+'==================поворот направо двумя моторами на 90 градусов ==========
+Sub povorot_toRight_2_90
+  Motor.ResetCount("BC")
+  Motor.MoveSync("BC",speed_motor,-(speed_motor),275,"True")
+EndSub
+
+' ================= поворот направо  до черного под левым датчиком ==
+Sub povorot_toRight_lBlack
+  Motor.ResetCount("BC")
+  Motor.StartSync("BC",speed_motor,-(speed_motor))
+  While l>lBlack+2 
+  EndWhile
+  Motor.Stop("BС","True")
+EndSub
+
+'==================поворот налево двумя моторами на 90 градусов ==========
+Sub povorot_toLeft_2_90
+  Motor.ResetCount("BC")
+  Motor.MoveSync("BC",-(speed_motor),speed_motor,275,"True")
+EndSub
+
+' ================= поворот налевого  до черного под левым датчиком ==
+Sub povorot_toLeft_lBlack
+  Motor.ResetCount("BC")
+  Motor.StartSync("BC",-(speed_motor),speed_motor)
+  While l>lBlack+2 
+  EndWhile
+  Motor.Stop("BС","True")
+EndSub
+
+'==================поворот направо одним мотором до черного на левом датчике ======
+Sub povorot_toRight_left_lBlack
+  Motor.StartSync("BC",speed_motor,0)
+  While l>lBlack+2
+  EndWhile
+EndSub
+
+'===========================цвет==============================
+Sub colors
+  If summa_RGB>20 Then
+    If H<31 Or H>330 Then
+      LCD.Clear()
+      LCD.Text(1,10,80,1,"Red")
+    EndIf
+    If H<91 And H>30 Then
+      LCD.Clear()
+      LCD.Text(1,10,80,1,"Yellow")
+    EndIf
+    If H<151 And H>90 Then
+      LCD.Clear()
+      LCD.Text(1,10,80,1,"Green")
+    EndIf
+    If H<211 And H>150 Then
+      LCD.Clear()
+      LCD.Text(1,10,80,1,"Green")
+    EndIf
+    If H<271 And H>210 Then 
+      LCD.Clear()
+      LCD.Text(1,10,80,1,"Blue")
+    EndIf
+    If H>270 And H<331 Then
+      LCD.Clear()
+      LCD.Text(1,10,80,1,"Red")
+    EndIf
+    LCD.Text(1,100,50,1,H)
+    LCD.Text(1,100,75,1,S)
+    LCD.Text(1,100,100,1,V)
+    LCD.Text(1,10,30,1,color[0])
+    LCD.Text(1,10,40,1,color[1])
+    LCD.Text(1,10,50,1,color[2])
+    LCD.Text(1,10,60,1,min)
+    LCD.Text(1,10,100,1,max)
+    LCD.Text(1,100,10,1,summa_RGB)
+    Program.Delay(10)
+  EndIf
+  summa_RGB=0
+  LCD.Clear()
+EndSub
+
+'===================== проезд назад ============================
+Sub move_back'проезд назад
+  Motor.MoveSync("BC",-(speed_motor),-(speed_motor),280,"False")
+EndSub
+
+'======================= проезд назад ====================== 
+Sub move_back2'проезд назад
+  Motor.MoveSync("BC",-(speed_motor),-(speed_motor),80,"False")
+EndSub
+
+'======================= проезд назад ====================== 
+Sub move_back3'проезд назад
+  t=ev3.Time
+  While time>EV3.Time-t
+    Motor.StartSync("BC",-(speed_motor),-(speed_motor))
+    EndWhile
+EndSub
+
+'=================== Основная программа ============================
+'===============================================================
+Thread.Run=drop_cub
+Thread.Run=ReadSensors
+Thread.Run=IntersectionCount
+' проезд до первого прекрестка с вычислением белого, черного и серого
+Thread.Run=lGrayFind
+Thread.Run=rGrayFind
+Intersection =0
+iCount=1
+move_line_2()
+' проезд до конца желтого склада со сбором всех лампочек в правый накопитель
+Intersection =0
+iCount=1
+move_line_to_cub_left ()   
+Intersection =0
+iCount=2
+While iCount>Intersection
+  move_line_to_cub_2 ()
+  If iCount>Intersection Then
+    Motor.MoveSync("BC",speed_motor,speed_motor,100,"True")
+    right_cell ()
+    YellowInCell =YellowInCell +1
+  EndIf  
+EndWhile 
+Motor.MoveSync("BC",speed_motor,speed_motor,80,"False")
+' поворот направо и движение вперед на один  перекресток
+povorot_toRight_2_90()
+Motor.Stop("BC","True")
+Thread.Run=left_open
+Intersection =0
+iCount=1
+move_line_2()
+Motor.MoveSync("BC",speed_motor,speed_motor,80,"False")
+'  поворот направо и проезд до конца зеленого склада со сбором всех лампочек в левый накопитель
+povorot_toRight_2_90()
+Motor.Stop("BC","True")
+left_close()
+Intersection =0
+iCount=2
+While iCount>Intersection
+  move_line_to_cub_2()
+  If iCount>Intersection Then
+    left_cell ()
+    GreenInCell =GreenInCell +1
+  EndIf  
+EndWhile   
+' разворот и движение до конца складов
+povorot_toRight_2_90()
+povorot_toRight_2_90()
+Motor.Stop("BC","True")
+Intersection =0
+iCount=2
+move_line_2 ()
+' движение по линии датчиком перекрестка до линии AREA1
+Sensor.SetMode(3,0)
+p = Sensor.ReadPercent(3)
+pGray=p+20 ' добавочное значение нужно подбирать
+Motor.ResetCount ("B")
+While (r>(rBlack +2)) And (l>(lBlack +2)) or Motor.GetCount("B")<650 
+  p = Sensor.ReadPercent(3)
+  error=(pGray-p)*0.2' этот коэффициент нужно долго и упорно подбирать
+  m1=speed_motor-error
+  m2=speed_motor+error
+  Motor.StartSync("bc",m1,m2)
+EndWhile
+Sensor.SetMode(3,2)
+'Motor.Stop("BC","True")
+Motor.MoveSync("BC",speed_motor,speed_motor,120,"True")
+Motor.Stop("BC","True")
+' поворот налево и движение до AREA1 со сбором черной лампочки (если есть)
+povorot_toLeft_2_90()
+Intersection =0
+iCount=1
+If GreenInCell=1 Then
+  move_line_to_cub_2()
+  take_cub()
+  BlackGreen=1
+EndIf  
+move_line_2()
+Motor.Stop("BC","True")
+povorot_toRight_lBlack()
+Intersection =0
+iCount=1
+k_old=k
+k=0.525
+move_line_to_cub_2() 
+k=k_old
+Intersection =0
+iCount=2
+move_line_to_cub_left() 
+Motor.MoveSync("BC",speed_motor,speed_motor,65,"True")
+'Motor.Stop("BC","True")
+If BlackGreen=0 Then
+  take_cub()
+  move_line_to_cub_2() 
+EndIf
+povorot_toRight_2_90()
+move_back3()
+move_line_to_cub_3()
+Motor.MoveSync("BC",speed_motor,speed_motor,45,"True")
+drop_cub()
